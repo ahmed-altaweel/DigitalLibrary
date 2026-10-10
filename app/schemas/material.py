@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, date
 from typing import Any, Generic, TypeVar
 
@@ -61,26 +61,38 @@ class AssetResponse(AssetBase):
     model_config = ConfigDict(from_attributes=True)
 
 class MaterialBase(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=500)
     description: str | None = None
-    content_type: str
-    language: str = "en"
+    content_type: str = Field(max_length=50)
+    language: str = Field(default="en", max_length=10)
     publication_date: date | None = None
-    isbn: str | None = None
-    doi: str | None = None
-    page_count: int | None = None
-    license_type: str | None = None
+    isbn: str | None = Field(default=None, max_length=20)
+    doi: str | None = Field(default=None, max_length=255)
+    page_count: int | None = Field(default=None, ge=0)
+    license_type: str | None = Field(default=None, max_length=100)
     license_notes: str | None = None
-    cover_image_url: str | None = None
-    external_url: str | None = None
+    cover_image_url: str | None = Field(default=None, max_length=500)
+    external_url: str | None = Field(default=None, max_length=1000)
 
 class MaterialCreate(MaterialBase):
     author_ids: list[str] = []
     category_ids: list[str] = []
     tag_ids: list[str] = []
 
-class MaterialUpdate(MaterialBase):
-    pass
+class MaterialUpdate(BaseModel):
+    """All fields optional so PUT behaves as a partial update."""
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = None
+    content_type: str | None = Field(default=None, max_length=50)
+    language: str | None = Field(default=None, max_length=10)
+    publication_date: date | None = None
+    isbn: str | None = Field(default=None, max_length=20)
+    doi: str | None = Field(default=None, max_length=255)
+    page_count: int | None = Field(default=None, ge=0)
+    license_type: str | None = Field(default=None, max_length=100)
+    license_notes: str | None = None
+    cover_image_url: str | None = Field(default=None, max_length=500)
+    external_url: str | None = Field(default=None, max_length=1000)
 
 class MaterialResponse(MaterialBase):
     id: str

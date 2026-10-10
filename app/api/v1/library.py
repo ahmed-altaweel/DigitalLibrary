@@ -11,9 +11,7 @@ router = APIRouter()
 
 @router.get("/me/library", response_model=PaginatedResponse[LibraryItemResponse])
 def get_library(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    items = library_service.get_user_library(db, current_user.id, page, size)
-    # Total count would normally be computed; using dummy count 100 for now.
-    total = 100
+    items, total = library_service.get_user_library(db, current_user.id, page, size)
     return {"items": items, "total": total, "page": page, "size": size, "pages": (total + size - 1) // size}
 
 from pydantic import BaseModel

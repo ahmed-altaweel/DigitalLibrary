@@ -3,6 +3,15 @@ from datetime import datetime, timezone
 from ..models.library import UserLibrary, ReadingList, ReadingListItem, ReadingProgress, UserBookmark, UserMaterialTag, UserNote
 
 def add_to_library(db: Session, user_id: str, material_id: str):
+    from fastapi import HTTPException
+    from ..models.material import Material
+
+    material = db.query(Material).filter(Material.id == material_id, Material.publication_status == "published").first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+    existing = db.query(UserLibrary).filter(UserLibrary.user_id == user_id, UserLibrary.material_id == material_id).first()
+    if existing:  # idempotent: adding twice is not an error
+        return existing
     item = UserLibrary(user_id=user_id, material_id=material_id)
     db.add(item)
     db.commit()
@@ -15,7 +24,9 @@ def remove_from_library(db: Session, user_id: str, material_id: str):
 
 def get_user_library(db: Session, user_id: str, page: int, size: int):
     q = db.query(UserLibrary).filter(UserLibrary.user_id == user_id)
-    return q.offset((page-1)*size).limit(size).all()
+    total = q.count()
+    items = q.order_by(UserLibrary.added_at.desc(), UserLibrary.id).offset((page-1)*size).limit(size).all()
+    return items, total
 
 def create_reading_list(db: Session, user_id: str, data):
     rl = ReadingList(user_id=user_id, title=data.title, description=data.description, is_public=data.is_public)

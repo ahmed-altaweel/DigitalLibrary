@@ -1,2 +1,7 @@
 *.ini
-tests
+!alembic.ini
+.env
+__pycache__/
+*.pyc
+storage/uploads/*
+!storage/uploads/.gitkeep
