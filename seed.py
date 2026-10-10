@@ -1,3 +1,6 @@
+import os
+import secrets
+
 from app.core.database import engine, SessionLocal, create_tables, Base
 from app.models.user import User, Role
 from app.models.material import Material, Category, Author, Tag, MaterialAuthor, MaterialCategory, MaterialTag
@@ -5,9 +8,19 @@ from app.core.security import hash_password
 from app.services.material_service import generate_slug
 
 def seed():
-    create_tables()
+    create_tables()  # idempotent; replace with `alembic upgrade head` once migrations exist
     db = SessionLocal()
-    
+
+    if db.query(Role).first():
+        print("Database already seeded; nothing to do.")
+        db.close()
+        return
+
+    # Passwords come from the environment, otherwise a random one is generated and printed once.
+    passwords = {}
+    for name in ("ADMIN", "EDITOR", "MEMBER"):
+        passwords[name] = os.getenv(f"SEED_{name}_PASSWORD") or secrets.token_urlsafe(12)
+
     # 1. Create Roles
     admin_role = Role(name="admin", description="Administrator")
     editor_role = Role(name="editor", description="Editor")
@@ -16,13 +29,13 @@ def seed():
     db.commit()
     
     # 2. Create Users
-    admin_user = User(email="admin@library.com", username="admin", hashed_password=hash_password("Admin123!"), is_active=True, is_verified=True)
+    admin_user = User(email="admin@library.com", username="admin", hashed_password=hash_password(passwords["ADMIN"]), is_active=True, is_verified=True)
     admin_user.roles.append(admin_role)
     
-    editor_user = User(email="editor@library.com", username="editor", hashed_password=hash_password("Editor123!"), is_active=True, is_verified=True)
+    editor_user = User(email="editor@library.com", username="editor", hashed_password=hash_password(passwords["EDITOR"]), is_active=True, is_verified=True)
     editor_user.roles.append(editor_role)
     
-    member_user = User(email="member@library.com", username="member", hashed_password=hash_password("Member123!"), is_active=True, is_verified=True)
+    member_user = User(email="member@library.com", username="member", hashed_password=hash_password(passwords["MEMBER"]), is_active=True, is_verified=True)
     member_user.roles.append(member_role)
     
     db.add_all([admin_user, editor_user, member_user])
@@ -80,6 +93,8 @@ def seed():
     db.commit()
     
     print("Database seeded successfully.")
+    for name, email in (("ADMIN", "admin@library.com"), ("EDITOR", "editor@library.com"), ("MEMBER", "member@library.com")):
+        print(f"  {email}: {passwords[name]}")
     db.close()
 
 if __name__ == "__main__":
