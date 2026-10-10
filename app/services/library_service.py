@@ -1,14 +1,21 @@
-from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
 from ..models.library import UserLibrary, ReadingList, ReadingListItem, ReadingProgress, UserBookmark, UserMaterialTag, UserNote
+from ..models.material import Material
 
-def add_to_library(db: Session, user_id: str, material_id: str):
-    from fastapi import HTTPException
-    from ..models.material import Material
 
+def _published_material_or_404(db: Session, material_id: str) -> Material:
     material = db.query(Material).filter(Material.id == material_id, Material.publication_status == "published").first()
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
+    return material
+
+
+def add_to_library(db: Session, user_id: str, material_id: str):
+    _published_material_or_404(db, material_id)
     existing = db.query(UserLibrary).filter(UserLibrary.user_id == user_id, UserLibrary.material_id == material_id).first()
     if existing:  # idempotent: adding twice is not an error
         return existing
@@ -32,6 +39,7 @@ def create_reading_list(db: Session, user_id: str, data):
     rl = ReadingList(user_id=user_id, title=data.title, description=data.description, is_public=data.is_public)
     db.add(rl)
     db.commit()
+    db.refresh(rl)
     return rl
 
 def update_reading_list(db: Session, user_id: str, list_id: str, data):
@@ -41,6 +49,7 @@ def update_reading_list(db: Session, user_id: str, list_id: str, data):
         rl.description = data.description
         rl.is_public = data.is_public
         db.commit()
+        db.refresh(rl)
     return rl
 
 def delete_reading_list(db: Session, user_id: str, list_id: str):
@@ -52,11 +61,17 @@ def delete_reading_list(db: Session, user_id: str, list_id: str):
         return True
     return False
 
-def add_to_reading_list(db: Session, user_id: str, list_id: str, material_id: str, order: int):
+def add_to_reading_list(db: Session, user_id: str, list_id: str, material_id: str, order: int, notes: str | None = None):
     rl = db.query(ReadingList).filter(ReadingList.id == list_id, ReadingList.user_id == user_id).first()
     if not rl:
         return None
-    item = ReadingListItem(reading_list_id=list_id, material_id=material_id, display_order=order)
+    _published_material_or_404(db, material_id)
+    exists = db.query(ReadingListItem).filter(
+        ReadingListItem.reading_list_id == list_id, ReadingListItem.material_id == material_id
+    ).first()
+    if exists:
+        raise HTTPException(status_code=409, detail="Material is already in this list")
+    item = ReadingListItem(reading_list_id=list_id, material_id=material_id, display_order=order, notes=notes)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -78,6 +93,26 @@ def reorder_reading_list(db: Session, user_id: str, list_id: str, item_orders: l
             if item:
                 item.display_order = order
         db.commit()
+
+def get_public_reading_lists(db: Session, page: int, size: int):
+    q = db.query(ReadingList).filter(ReadingList.is_public == True)  # noqa: E712
+    total = q.count()
+    items = q.order_by(ReadingList.created_at.desc(), ReadingList.id).offset((page-1)*size).limit(size).all()
+    return items, total
+
+def get_public_reading_list(db: Session, list_id: str):
+    """Returns (list, items). Items point only at published materials."""
+    rl = db.query(ReadingList).filter(ReadingList.id == list_id, ReadingList.is_public == True).first()  # noqa: E712
+    if not rl:
+        return None, []
+    items = (
+        db.query(ReadingListItem)
+        .join(Material, Material.id == ReadingListItem.material_id)
+        .filter(ReadingListItem.reading_list_id == list_id, Material.publication_status == "published")
+        .order_by(ReadingListItem.display_order, ReadingListItem.added_at)
+        .all()
+    )
+    return rl, items
 
 def update_reading_progress(db: Session, user_id: str, material_id: str, data):
     rp = db.query(ReadingProgress).filter(ReadingProgress.user_id == user_id, ReadingProgress.material_id == material_id).first()
@@ -160,6 +195,17 @@ def get_bookmarks(db: Session, user_id: str, material_id=None):
     return q.all()
 
 def add_user_tag(db: Session, user_id: str, material_id: str, tag_name: str):
+    tag_name = tag_name.strip()
+    if not tag_name:
+        raise HTTPException(status_code=400, detail="Tag name is required")
+    _published_material_or_404(db, material_id)
+    exists = db.query(UserMaterialTag).filter(
+        UserMaterialTag.user_id == user_id,
+        UserMaterialTag.material_id == material_id,
+        UserMaterialTag.tag_name == tag_name,
+    ).first()
+    if exists:
+        raise HTTPException(status_code=409, detail="You already added this tag to the material")
     t = UserMaterialTag(user_id=user_id, material_id=material_id, tag_name=tag_name)
     db.add(t)
     db.commit()

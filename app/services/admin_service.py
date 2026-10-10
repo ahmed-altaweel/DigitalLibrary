@@ -1,13 +1,16 @@
 from sqlalchemy.orm import Session
-from ..models.user import User, Role
+
 from ..models.material import Material
 from ..models.suggestion import AuditLog
+from ..models.user import Role, User
+from .auth_service import revoke_all_refresh_tokens
+
 
 def get_users(db: Session, page: int, size: int, search: str = None):
     q = db.query(User)
     if search:
         q = q.filter(User.email.ilike(f"%{search}%"))
-    return q.offset((page-1)*size).limit(size).all()
+    return q.order_by(User.created_at.desc(), User.id).offset((page-1)*size).limit(size).all()
 
 def update_user_roles(db: Session, user_id: str, roles: list[str]):
     user = db.query(User).filter(User.id == user_id).first()
@@ -23,6 +26,15 @@ def deactivate_user(db: Session, user_id: str):
     u = db.query(User).filter(User.id == user_id).first()
     if u:
         u.is_active = False
+        revoke_all_refresh_tokens(db, u.id, commit=False)  # also kill every active session
+        db.commit()
+        return u
+    return None
+
+def activate_user(db: Session, user_id: str):
+    u = db.query(User).filter(User.id == user_id).first()
+    if u:
+        u.is_active = True
         db.commit()
         return u
     return None
@@ -33,7 +45,7 @@ def get_audit_logs(db: Session, page: int, size: int, filters: dict):
         q = q.filter(AuditLog.action == filters["action"])
     if filters.get("user_id"):
         q = q.filter(AuditLog.user_id == filters["user_id"])
-    return q.offset((page-1)*size).limit(size).all()
+    return q.order_by(AuditLog.created_at.desc(), AuditLog.id).offset((page-1)*size).limit(size).all()
 
 def log_action(db: Session, user_id: str, action: str, entity_type: str, entity_id: str, details: dict, request=None):
     ip_address = request.client.host if request and request.client else None

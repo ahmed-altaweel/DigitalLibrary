@@ -2,6 +2,7 @@ import re
 import unicodedata
 import uuid
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from ..core.security import utcnow
@@ -15,10 +16,13 @@ from ..models.library import (
 )
 from ..models.material import (
     Asset,
+    Author,
+    Category,
     Material,
     MaterialAuthor,
     MaterialCategory,
     MaterialTag,
+    Tag,
 )
 from ..models.suggestion import CatalogSuggestion
 from ..storage.factory import get_storage
@@ -40,15 +44,28 @@ def generate_slug(title: str) -> str:
     return f"{text or 'item'}-{uuid.uuid4().hex[:8]}"
 
 
-def create_material(db: Session, data, user_id: str):
+def _unique_existing_ids(db: Session, model, ids, label: str) -> list[str]:
+    """De-duplicate ids and make sure every one exists (400 instead of a DB 500)."""
+    ids = list(dict.fromkeys(ids or []))
+    if ids and db.query(model.id).filter(model.id.in_(ids)).count() != len(ids):
+        raise HTTPException(status_code=400, detail=f"Unknown {label} id")
+    return ids
+
+
+def create_material(db: Session, data, user_id: str, publish: bool = False):
+    """Staff pass publish=True; everyone else creates a draft that an editor must publish."""
+    author_ids = _unique_existing_ids(db, Author, getattr(data, "author_ids", None), "author")
+    category_ids = _unique_existing_ids(db, Category, getattr(data, "category_ids", None), "category")
+    tag_ids = _unique_existing_ids(db, Tag, getattr(data, "tag_ids", None), "tag")
+
     material = Material(
         title=data.title,
         slug=generate_slug(data.title),
         description=data.description,
         content_type=data.content_type,
         language=data.language,
-        publication_status="published",
-        published_at=utcnow(),
+        publication_status="published" if publish else "draft",
+        published_at=utcnow() if publish else None,
         publication_date=data.publication_date,
         isbn=data.isbn,
         doi=data.doi,
@@ -62,20 +79,12 @@ def create_material(db: Session, data, user_id: str):
     db.add(material)
     db.flush()
 
-    # Link authors
-    if getattr(data, "author_ids", None):
-        for order, aid in enumerate(data.author_ids):
-            db.add(MaterialAuthor(material_id=material.id, author_id=aid, display_order=order))
-
-    # Link categories
-    if getattr(data, "category_ids", None):
-        for cid in data.category_ids:
-            db.add(MaterialCategory(material_id=material.id, category_id=cid))
-
-    # Link tags
-    if getattr(data, "tag_ids", None):
-        for tid in data.tag_ids:
-            db.add(MaterialTag(material_id=material.id, tag_id=tid))
+    for order, aid in enumerate(author_ids):
+        db.add(MaterialAuthor(material_id=material.id, author_id=aid, display_order=order))
+    for cid in category_ids:
+        db.add(MaterialCategory(material_id=material.id, category_id=cid))
+    for tid in tag_ids:
+        db.add(MaterialTag(material_id=material.id, tag_id=tid))
 
     db.commit()
     db.refresh(material)
@@ -117,6 +126,13 @@ def unpublish_material(db: Session, material_id: str):
 
 def archive_material(db: Session, material_id: str):
     return _set_status(db, material_id, "archived")
+
+
+def increment_view(db: Session, material_id: str):
+    db.query(Material).filter(Material.id == material_id).update(
+        {Material.view_count: Material.view_count + 1}, synchronize_session=False
+    )
+    db.commit()
 
 
 def delete_material(db: Session, material_id: str) -> bool:
@@ -163,6 +179,36 @@ def get_material(db: Session, material_id_or_slug: str, user=None):
     )
 
 
+def get_material_relations(db: Session, material_id: str, include_private_assets: bool = False) -> dict:
+    """Authors, categories, tags and downloadable files of one material."""
+    authors = (
+        db.query(Author)
+        .join(MaterialAuthor, MaterialAuthor.author_id == Author.id)
+        .filter(MaterialAuthor.material_id == material_id)
+        .order_by(MaterialAuthor.display_order, Author.name)
+        .all()
+    )
+    categories = (
+        db.query(Category)
+        .join(MaterialCategory, MaterialCategory.category_id == Category.id)
+        .filter(MaterialCategory.material_id == material_id)
+        .order_by(Category.name)
+        .all()
+    )
+    tags = (
+        db.query(Tag)
+        .join(MaterialTag, MaterialTag.tag_id == Tag.id)
+        .filter(MaterialTag.material_id == material_id)
+        .order_by(Tag.name)
+        .all()
+    )
+    aq = db.query(Asset).filter(Asset.material_id == material_id)
+    if not include_private_assets:
+        aq = aq.filter(Asset.access_policy != "private")
+    assets = aq.order_by(Asset.is_primary.desc(), Asset.created_at, Asset.id).all()
+    return {"authors": authors, "categories": categories, "tags": tags, "assets": assets}
+
+
 def search_materials(
     db: Session,
     query: str | None,
@@ -178,6 +224,8 @@ def search_materials(
         q = q.filter(Material.title.ilike(like) | Material.description.ilike(like))
     if filters.get("status"):
         q = q.filter(Material.publication_status == filters["status"])
+    if filters.get("created_by"):
+        q = q.filter(Material.created_by == filters["created_by"])
     if filters.get("content_type"):
         q = q.filter(Material.content_type == filters["content_type"])
     if filters.get("author_id"):

@@ -1,5 +1,7 @@
-from pydantic import BaseModel, ConfigDict
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
 
 class SuggestionBase(BaseModel):
     suggestion_type: str
@@ -19,5 +21,5 @@ class SuggestionResponse(SuggestionBase):
     model_config = ConfigDict(from_attributes=True)
 
 class SuggestionReview(BaseModel):
-    action: str  # approved, rejected
+    action: Literal["approved", "rejected"]
     notes: str | None = None

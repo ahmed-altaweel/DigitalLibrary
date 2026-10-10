@@ -114,3 +114,22 @@ class MaterialSearchParams(BaseModel):
     tag_id: str | None = None
     author_id: str | None = None
     status: str | None = "published"
+
+
+# ---- أضف هذا الجزء في آخر ملف app/schemas/material.py ----
+class AssetPublic(BaseModel):
+    id: str
+    original_filename: str
+    mime_type: str
+    file_size: int
+    access_policy: str
+    is_primary: bool
+    created_at: datetime | None = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MaterialDetailResponse(MaterialResponse):
+    authors: list[AuthorResponse] = []
+    categories: list[CategoryResponse] = []
+    tags: list[TagResponse] = []
+    assets: list[AssetPublic] = []
