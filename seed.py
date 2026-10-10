@@ -16,10 +16,12 @@ def seed():
         db.close()
         return
 
-    # Passwords come from the environment, otherwise a random one is generated and printed once.
+    import app.models  # ensure all models are registered
+
+    # Passwords come from the environment, otherwise user-friendly defaults are used.
     passwords = {}
     for name in ("ADMIN", "EDITOR", "MEMBER"):
-        passwords[name] = os.getenv(f"SEED_{name}_PASSWORD") or secrets.token_urlsafe(12)
+        passwords[name] = os.getenv(f"SEED_{name}_PASSWORD") or f"{name.lower()}123456"
 
     # 1. Create Roles
     admin_role = Role(name="admin", description="Administrator")

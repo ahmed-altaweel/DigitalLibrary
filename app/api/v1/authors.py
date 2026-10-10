@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ...core.database import get_db
-from ...core.dependencies import get_current_editor
+from ...core.dependencies import get_current_editor, get_current_user
 from ...schemas.material import AuthorCreate, AuthorResponse
 from ...models.material import Author
 import uuid
@@ -13,7 +13,7 @@ def get_authors(db: Session = Depends(get_db)):
     return db.query(Author).all()
 
 @router.post("/", response_model=AuthorResponse)
-def create_author(data: AuthorCreate, db: Session = Depends(get_db), current_user=Depends(get_current_editor)):
+def create_author(data: AuthorCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     slug = data.name.lower().replace(" ", "-") + "-" + str(uuid.uuid4())[:8]
     author = Author(name=data.name, slug=slug, bio=data.bio, website=data.website)
     db.add(author)

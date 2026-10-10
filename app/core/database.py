@@ -23,4 +23,5 @@ def get_db():
         db.close()
 
 def create_tables():
+    import app.models  # noqa: F401
     Base.metadata.create_all(bind=engine)

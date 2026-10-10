@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ...core.config import get_settings
 from ...core.database import get_db
-from ...core.dependencies import get_current_editor, get_optional_user, user_has_role
+from ...core.dependencies import get_current_editor, get_current_user, get_optional_user, user_has_role
 from ...models.material import Asset, Material
 from ...models.user import User
 from ...storage.factory import get_storage
@@ -66,11 +66,13 @@ def upload_asset(
     file: UploadFile = File(...),
     access_policy: str = Form("members"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_editor),
+    current_user: User = Depends(get_current_user),
 ):
     material = db.query(Material).filter(Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
+    if material.created_by != current_user.id and not user_has_role(current_user, "admin", "editor"):
+        raise HTTPException(status_code=403, detail="Insufficient privileges")
     if access_policy not in ACCESS_POLICIES:
         raise HTTPException(status_code=400, detail=f"access_policy must be one of: {', '.join(sorted(ACCESS_POLICIES))}")
 

@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 storage/uploads/*
 !storage/uploads/.gitkeep
+venv/
+.vscode/
+tests

@@ -47,6 +47,8 @@ def create_material(db: Session, data, user_id: str):
         description=data.description,
         content_type=data.content_type,
         language=data.language,
+        publication_status="published",
+        published_at=utcnow(),
         publication_date=data.publication_date,
         isbn=data.isbn,
         doi=data.doi,
@@ -58,6 +60,23 @@ def create_material(db: Session, data, user_id: str):
         created_by=user_id,
     )
     db.add(material)
+    db.flush()
+
+    # Link authors
+    if getattr(data, "author_ids", None):
+        for order, aid in enumerate(data.author_ids):
+            db.add(MaterialAuthor(material_id=material.id, author_id=aid, display_order=order))
+
+    # Link categories
+    if getattr(data, "category_ids", None):
+        for cid in data.category_ids:
+            db.add(MaterialCategory(material_id=material.id, category_id=cid))
+
+    # Link tags
+    if getattr(data, "tag_ids", None):
+        for tid in data.tag_ids:
+            db.add(MaterialTag(material_id=material.id, tag_id=tid))
+
     db.commit()
     db.refresh(material)
     return material

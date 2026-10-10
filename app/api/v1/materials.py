@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ...core.database import get_db
-from ...core.dependencies import get_current_admin, get_current_editor, get_optional_user, user_has_role
+from ...core.dependencies import get_current_admin, get_current_editor, get_current_user, get_optional_user, user_has_role
 from ...models.user import User
 from ...schemas.material import (
     MaterialCreate,
@@ -62,7 +62,7 @@ def get_material(id_or_slug: str, db: Session = Depends(get_db), current_user: U
 
 
 @router.post("/", response_model=MaterialResponse)
-def create_material(data: MaterialCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_editor)):
+def create_material(data: MaterialCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return material_service.create_material(db, data, current_user.id)
 
 

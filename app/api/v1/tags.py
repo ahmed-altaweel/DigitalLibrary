@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ...core.database import get_db
-from ...core.dependencies import get_current_editor
+from ...core.dependencies import get_current_editor, get_current_user
 from ...schemas.material import TagCreate, TagResponse
 from ...models.material import Tag
 import uuid
@@ -13,7 +13,7 @@ def get_tags(db: Session = Depends(get_db)):
     return db.query(Tag).all()
 
 @router.post("/", response_model=TagResponse)
-def create_tag(data: TagCreate, db: Session = Depends(get_db), current_user=Depends(get_current_editor)):
+def create_tag(data: TagCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     slug = data.name.lower().replace(" ", "-") + "-" + str(uuid.uuid4())[:8]
     tag = Tag(name=data.name, slug=slug)
     db.add(tag)
